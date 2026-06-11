@@ -434,8 +434,11 @@ async def main_loop():
             await send_event(OutgoingEventType.compile_error, {'traceback': e.stderr.decode()})
 
 
-PybricksHubBLE.download_user_program = download_user_program_override
-PybricksHubUSB.download_user_program = download_user_program_override
+def main():
+    PybricksHubBLE.download_user_program = download_user_program_override
+    PybricksHubUSB.download_user_program = download_user_program_override
+    asyncio.run(main_loop())
+
 
 if __name__ == "__main__":
-    asyncio.run(main_loop())
+    main()
