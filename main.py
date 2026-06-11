@@ -6,6 +6,7 @@ from enum import Enum
 from subprocess import CalledProcessError
 
 import reactivex.operators as op
+from bleak import BLEDevice, AdvertisementData, BleakScanner
 from packaging.version import Version
 from pybricksdev.ble import find_device as find_ble
 from pybricksdev.ble.pybricks import (
@@ -13,6 +14,7 @@ from pybricksdev.ble.pybricks import (
     Command,
     StatusFlag,
 )
+from pybricksdev.ble.pybricks import PYBRICKS_SERVICE_UUID
 from pybricksdev.cli import _get_script_path
 from pybricksdev.connections.pybricks import PybricksHubBLE, HubDisconnectError, PybricksHub
 from pybricksdev.connections.pybricks import PybricksHubUSB
@@ -31,8 +33,12 @@ incoming_messages = asyncio.Queue()
 
 
 class IncomingEventType(str, Enum):
+    # `timeout (int | float, seconds)`
+    start_ble_scanning = 'start_ble_scanning'
+
     # `conn_type: "ble" | "usb"`
-    # `hub_name` (optional)
+    # `ble_address` (optional)
+    # `ble_hub_name` (optional)
     connect_to_hub = 'connect_to_hub'
 
     disconnect_from_hub = 'disconnect_from_hub'
@@ -54,6 +60,11 @@ class IncomingEventType(str, Enum):
 
 
 class OutgoingEventType(str, Enum):
+    # `device_name`
+    # `address`
+    # `rssi: int`
+    ble_device_found = 'ble_device_found'
+
     hub_connected = 'hub_connected'
 
     connection_timeout = 'connection_timeout'
@@ -211,11 +222,19 @@ async def download_user_program_override(self: PybricksHub, program: bytes):
     )
 
 
+async def ble_scanner_callback(device: BLEDevice, adv: AdvertisementData):
+    if PYBRICKS_SERVICE_UUID in adv.service_uuids and adv.local_name:
+        await send_event(OutgoingEventType.ble_device_found,
+                         {"address": device.address, "device_name": device.name, "rssi": adv.rssi})
+
+
 async def main_loop():
+    ble_scanner = BleakScanner(ble_scanner_callback)
+    asyncio.create_task(watch_incoming_events())
+
     hub = None
     hub_monitor_tasks = None
-
-    asyncio.create_task(watch_incoming_events())
+    ble_scan_stop_event = asyncio.Event()
 
     while True:
         try:
@@ -229,15 +248,37 @@ async def main_loop():
                                  {'explanation': 'all events must have an "event_type" tag'})
                 continue
 
+            ble_scan_stop_event.set()
+
             match command.get('event_type'):
+                case IncomingEventType.start_ble_scanning:
+                    if 'timeout' not in command:
+                        await send_event(OutgoingEventType.precondition_violated,
+                                         {
+                                             'explanation': 'a "start_ble_scanning" command must have a "timeout argument"'})
+
+                    timeout = command.get('timeout')
+
+                    if type(timeout) is not float and type(timeout) is not int:
+                        await send_event(OutgoingEventType.precondition_violated,
+                                         {
+                                             'explanation': 'the "timeout" argument must be an integer or floating-point number'})
+
+                    ble_scan_stop_event.clear()
+
+                    async with BleakScanner(ble_scanner_callback) as scanner:
+                        try:
+                            await asyncio.wait_for(ble_scan_stop_event.wait(), timeout)
+                        except TimeoutError:
+                            pass
 
                 case IncomingEventType.connect_to_hub:
                     if hub:
                         await send_event(OutgoingEventType.precondition_violated,
                                          payload={'explanation': 'a hub is already connected'})
                     else:
-                        if 'hub_name' in command:
-                            name = command.get('hub_name')
+                        if 'ble_hub_name' in command:
+                            name = command.get('ble_hub_name')
                         else:
                             name = None
 
@@ -251,7 +292,12 @@ async def main_loop():
 
                         if conntype == 'ble':
                             try:
-                                device_or_address = await find_ble(name)
+                                if 'ble_address' in command:
+                                    device_or_address = await BleakScanner.find_device_by_address(
+                                        command.get('ble_address'))
+                                else:
+                                    device_or_address = await find_ble(name)
+
                                 hub = PybricksHubBLE(device_or_address)
                             except TimeoutError:
                                 await send_event(OutgoingEventType.connection_timeout)
