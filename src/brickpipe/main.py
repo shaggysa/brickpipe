@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import struct
 import sys
 from enum import Enum
@@ -266,11 +267,14 @@ async def main_loop():
 
                     ble_scan_stop_event.clear()
 
-                    async with BleakScanner(ble_scanner_callback) as scanner:
-                        try:
-                            await asyncio.wait_for(ble_scan_stop_event.wait(), timeout)
-                        except TimeoutError:
-                            pass
+                    async def scan_ble(timeout: float | int):
+                        async with BleakScanner(ble_scanner_callback) as scanner:
+                            try:
+                                await asyncio.wait_for(ble_scan_stop_event.wait(), timeout)
+                            except TimeoutError:
+                                pass
+
+                    asyncio.create_task(scan_ble(timeout))
 
                 case IncomingEventType.connect_to_hub:
                     if hub:
@@ -418,7 +422,7 @@ async def main_loop():
                         if hub_monitor_tasks:
                             hub_monitor_tasks.cancel()
                         await hub.disconnect()
-                    exit(0)
+                    os._exit(0)
 
                 case _:
                     print(f"Invalid command: {command}")
