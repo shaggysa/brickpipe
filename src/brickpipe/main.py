@@ -299,6 +299,8 @@ async def main_loop():
                                 if 'ble_address' in command:
                                     device_or_address = await BleakScanner.find_device_by_address(
                                         command.get('ble_address'))
+                                    if device_or_address is None:
+                                        raise TimeoutError
                                 else:
                                     device_or_address = await find_ble(name)
 
