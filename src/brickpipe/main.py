@@ -236,6 +236,7 @@ async def main_loop():
     hub = None
     hub_monitor_tasks = None
     ble_scan_stop_event = asyncio.Event()
+    ble_scanner_task = None
 
     while True:
         try:
@@ -250,6 +251,9 @@ async def main_loop():
                 continue
 
             ble_scan_stop_event.set()
+            if ble_scanner_task:
+                await ble_scanner_task
+                ble_scanner_task = None
 
             match command.get('event_type'):
                 case IncomingEventType.start_ble_scanning:
@@ -274,7 +278,7 @@ async def main_loop():
                             except TimeoutError:
                                 pass
 
-                    asyncio.create_task(scan_ble(timeout))
+                    ble_scanner_task = asyncio.create_task(scan_ble(timeout))
 
                 case IncomingEventType.connect_to_hub:
                     if hub:

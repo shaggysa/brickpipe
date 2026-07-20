@@ -1,6 +1,6 @@
 [project]
 name = "brickpipe"
-version = "0.3.2"
+version = "0.4.0"
 requires-python = ">=3.10"
 description = "A json IPC interface for interacting with pybricks hubs"
 readme = "README.md"
