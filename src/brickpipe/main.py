@@ -361,7 +361,7 @@ async def main_loop():
 
                         try:
                             with _get_script_path(open(program_path)) as script_path:
-                                await hub.download(script_path)
+                                await hub.race_disconnect(hub.download(script_path))
                         except FileNotFoundError:
                             await send_event(OutgoingEventType.precondition_violated,
                                              payload={'explanation': 'received file path is not valid'})
@@ -385,7 +385,7 @@ async def main_loop():
 
                         try:
                             with _get_script_path(open(program_path)) as script_path:
-                                await hub.download(script_path)
+                                await hub.race_disconnect(hub.download(script_path))
                                 await hub.start_user_program()
                         except FileNotFoundError:
                             await send_event(OutgoingEventType.precondition_violated,
